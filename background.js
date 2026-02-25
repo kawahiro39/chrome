@@ -263,8 +263,28 @@ async function runProject(project, sourceTabId, destTabId) {
             if (!node) {
               return { ok: false, error: `click target not found: ${selector}` };
             }
+
+            const view = node.ownerDocument?.defaultView || window;
             node.scrollIntoView({ block: 'center', inline: 'center' });
-            node.click();
+
+            if (typeof node.focus === 'function') {
+              node.focus({ preventScroll: true });
+            }
+
+            const eventInit = { bubbles: true, cancelable: true, composed: true, view };
+            const mouseEventInit = { ...eventInit, button: 0, buttons: 1, detail: 1 };
+            const pointerCtor = view.PointerEvent || view.MouseEvent;
+
+            node.dispatchEvent(new pointerCtor('pointerdown', mouseEventInit));
+            node.dispatchEvent(new view.MouseEvent('mousedown', mouseEventInit));
+            node.dispatchEvent(new pointerCtor('pointerup', mouseEventInit));
+            node.dispatchEvent(new view.MouseEvent('mouseup', mouseEventInit));
+            node.dispatchEvent(new view.MouseEvent('click', mouseEventInit));
+
+            if (typeof node.click === 'function') {
+              node.click();
+            }
+
             return { ok: true };
           }
         });
