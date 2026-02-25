@@ -162,7 +162,9 @@ saveProjectBtn.addEventListener('click', async () => {
 
 runProjectBtn.addEventListener('click', async () => {
   const result = await sendMessage('RUN_PROJECT', {
-    projectId: projectSelect.value
+    projectId: projectSelect.value,
+    sourceTabId: Number(sourceSelect.value),
+    destTabId: Number(destSelect.value)
   });
   renderRunLog(result.logs);
 });

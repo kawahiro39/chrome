@@ -130,9 +130,20 @@ async function waitTabComplete(tabId, timeoutMs = 20000) {
   });
 }
 
-async function runProject(project) {
-  const sourceTab = await chrome.tabs.create({ url: project.sourceUrl, active: false });
-  const destTab = await chrome.tabs.create({ url: project.destUrl, active: false });
+async function runProject(project, sourceTabId, destTabId) {
+  if (!sourceTabId || !destTabId) {
+    throw new Error('実行先のコピー元/ペースト先タブを選択してください。');
+  }
+  if (sourceTabId === destTabId) {
+    throw new Error('実行先のコピー元/ペースト先は別タブを選択してください。');
+  }
+
+  const sourceTab = await chrome.tabs.get(sourceTabId);
+  const destTab = await chrome.tabs.get(destTabId);
+
+  if (isRestrictedUrl(sourceTab.url) || isRestrictedUrl(destTab.url)) {
+    throw new Error('制限ページでは実行できません。http/httpsページを選択してください。');
+  }
 
   await waitTabComplete(sourceTab.id);
   await waitTabComplete(destTab.id);
@@ -140,7 +151,17 @@ async function runProject(project) {
   await ensureInjected(sourceTab.id);
   await ensureInjected(destTab.id);
 
-  const logs = [];
+  const logs = [
+    `ℹ️ 実行対象(コピー元): ${sourceTab.title || ''} [${sourceTab.url || ''}]`,
+    `ℹ️ 実行対象(ペースト先): ${destTab.title || ''} [${destTab.url || ''}]`
+  ];
+
+  if (project.sourceUrl && sourceTab.url && project.sourceUrl !== sourceTab.url) {
+    logs.push('⚠️ 保存時のコピー元URLと現在タブURLが異なります。現在タブで実行を継続します。');
+  }
+  if (project.destUrl && destTab.url && project.destUrl !== destTab.url) {
+    logs.push('⚠️ 保存時のペースト先URLと現在タブURLが異なります。現在タブで実行を継続します。');
+  }
 
   for (const mapping of project.mappings) {
     let sourceValue = '';
@@ -328,7 +349,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         if (!project) {
           throw new Error('プロジェクトが見つかりません。');
         }
-        const logs = await runProject(project);
+        const logs = await runProject(project, message.sourceTabId, message.destTabId);
         state.runLogs = logs;
         responseOk(sendResponse, { logs });
         break;
