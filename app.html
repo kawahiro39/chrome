@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Copy & Paste Mapper - 固定UI</title>
+    <link rel="stylesheet" href="app.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Copy & Paste Mapper</h1>
+      <p>コピー元 → ペースト先を1対1で作成して保存/実行します。</p>
+    </header>
+
+    <section class="panel">
+      <h2>ペア作成</h2>
+      <div class="grid">
+        <label>
+          コピー元タブ
+          <select id="source-tab"></select>
+        </label>
+        <label>
+          ペースト先タブ
+          <select id="dest-tab"></select>
+        </label>
+      </div>
+      <div class="actions">
+        <button id="refresh-tabs">タブ更新</button>
+        <button id="start-pairing" class="primary">ペア選択開始</button>
+        <button id="resume-pairing">再開</button>
+        <button id="stop-pairing">停止</button>
+      </div>
+      <div id="state-line"></div>
+      <div id="pair-count"></div>
+      <ul id="pair-list"></ul>
+      <div class="save-row">
+        <input id="project-name" placeholder="プロジェクト名" />
+        <button id="save-project" class="primary">終了して保存</button>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>保存済みプロジェクト</h2>
+      <div class="actions">
+        <select id="project-select"></select>
+        <button id="run-project" class="primary">起動＆実行</button>
+      </div>
+      <ul id="run-log"></ul>
+    </section>
+
+    <section class="panel">
+      <h2>診断</h2>
+      <button id="diagnose">診断実行</button>
+      <pre id="diagnostic-output"></pre>
+    </section>
+
+    <script src="app.js"></script>
+  </body>
+</html>
