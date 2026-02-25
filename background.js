@@ -8,7 +8,7 @@ const state = {
   destUrl: '',
   status: 'idle',
   pendingCopy: null,
-  mappings: [],
+  steps: [],
   runLogs: []
 };
 
@@ -23,9 +23,11 @@ function responseError(sendResponse, error) {
 function statusText() {
   switch (state.status) {
     case 'copy_waiting':
-      return 'コピー待ち';
+      return 'コピー待ち（→キーでクリック手順を追加）';
     case 'paste_waiting':
       return 'ペースト待ち';
+    case 'click_waiting_dest':
+      return 'クリック待ち（ペースト先タブ）';
     case 'stopped':
       return '停止中';
     default:
@@ -90,13 +92,68 @@ async function stopSelectionOnTabs() {
 function resetSession(keepTabs = true) {
   state.status = 'idle';
   state.pendingCopy = null;
-  state.mappings = [];
+  state.steps = [];
   if (!keepTabs) {
     state.sourceTabId = null;
     state.destTabId = null;
     state.sourceUrl = '';
     state.destUrl = '';
   }
+}
+
+function toStepsFromMappings(mappings = []) {
+  const steps = [];
+  for (const mapping of mappings) {
+    steps.push({
+      stepId: crypto.randomUUID(),
+      type: 'copy',
+      tabRole: 'source',
+      selector: mapping.sourceSelector,
+      label: `${mapping.label || '項目'}-copy`
+    });
+    steps.push({
+      stepId: crypto.randomUUID(),
+      type: 'paste',
+      tabRole: 'dest',
+      selector: mapping.destSelector,
+      label: `${mapping.label || '項目'}-paste`
+    });
+  }
+  return steps;
+}
+
+function buildMappingsFromSteps(steps = []) {
+  const mappings = [];
+  let pendingSource = null;
+
+  for (const step of steps) {
+    if (step.type === 'copy' && step.tabRole === 'source') {
+      pendingSource = step.selector;
+      continue;
+    }
+    if (step.type === 'paste' && step.tabRole === 'dest' && pendingSource) {
+      mappings.push({
+        mappingId: crypto.randomUUID(),
+        label: `項目${mappings.length + 1}`,
+        sourceSelector: pendingSource,
+        destSelector: step.selector
+      });
+      pendingSource = null;
+    }
+  }
+
+  return mappings;
+}
+
+function projectSteps(project) {
+  if (Array.isArray(project.steps) && project.steps.length) {
+    return project.steps;
+  }
+  return toStepsFromMappings(project.mappings || []);
+}
+
+function pairCountFromSteps(steps = []) {
+  return steps.filter((step) => step.type === 'paste').length;
 }
 
 async function loadProjects() {
@@ -151,6 +208,7 @@ async function runProject(project, sourceTabId, destTabId) {
   await ensureInjected(sourceTab.id);
   await ensureInjected(destTab.id);
 
+  const steps = projectSteps(project);
   const logs = [
     `ℹ️ 実行対象(コピー元): ${sourceTab.title || ''} [${sourceTab.url || ''}]`,
     `ℹ️ 実行対象(ペースト先): ${destTab.title || ''} [${destTab.url || ''}]`
@@ -163,51 +221,97 @@ async function runProject(project, sourceTabId, destTabId) {
     logs.push('⚠️ 保存時のペースト先URLと現在タブURLが異なります。現在タブで実行を継続します。');
   }
 
-  for (const mapping of project.mappings) {
-    let sourceValue = '';
+  let lastValue = '';
+  let hasValue = false;
+
+  for (let index = 0; index < steps.length; index += 1) {
+    const step = steps[index];
+    const stepLabel = step.label || `手順${index + 1}`;
+    const targetTabId = step.tabRole === 'source' ? sourceTab.id : destTab.id;
+
     try {
-      const [sourceResult] = await chrome.scripting.executeScript({
-        target: { tabId: sourceTab.id },
-        args: [mapping.sourceSelector],
-        func: (selector) => {
-          const node = document.querySelector(selector);
-          if (!node) {
-            return { ok: false, error: `source not found: ${selector}` };
+      if (step.type === 'copy') {
+        const [copyResult] = await chrome.scripting.executeScript({
+          target: { tabId: targetTabId },
+          args: [step.selector],
+          func: (selector) => {
+            const node = document.querySelector(selector);
+            if (!node) {
+              return { ok: false, error: `source not found: ${selector}` };
+            }
+            const value = 'value' in node ? node.value : node.textContent || '';
+            return { ok: true, value };
           }
-          const value = 'value' in node ? node.value : node.textContent || '';
-          return { ok: true, value };
-        }
-      });
-      if (!sourceResult.result.ok) {
-        throw new Error(sourceResult.result.error);
-      }
-      sourceValue = sourceResult.result.value;
+        });
 
-      const [destResult] = await chrome.scripting.executeScript({
-        target: { tabId: destTab.id },
-        args: [mapping.destSelector, sourceValue],
-        func: (selector, value) => {
-          const node = document.querySelector(selector);
-          if (!node) {
-            return { ok: false, error: `dest not found: ${selector}` };
-          }
-          const tag = node.tagName.toLowerCase();
-          if (tag !== 'input') {
-            return { ok: false, error: `dest is not input: ${selector}` };
-          }
-          node.value = value;
-          node.dispatchEvent(new Event('input', { bubbles: true }));
-          node.dispatchEvent(new Event('change', { bubbles: true }));
-          return { ok: true };
+        if (!copyResult.result.ok) {
+          throw new Error(copyResult.result.error);
         }
-      });
 
-      if (!destResult.result.ok) {
-        throw new Error(destResult.result.error);
+        lastValue = copyResult.result.value;
+        hasValue = true;
+        logs.push(`✅ ${stepLabel}: コピー成功`);
+        continue;
       }
-      logs.push(`✅ ${mapping.label}: 転記成功`);
+
+      if (step.type === 'click') {
+        const [clickResult] = await chrome.scripting.executeScript({
+          target: { tabId: targetTabId },
+          args: [step.selector],
+          func: (selector) => {
+            const node = document.querySelector(selector);
+            if (!node) {
+              return { ok: false, error: `click target not found: ${selector}` };
+            }
+            node.scrollIntoView({ block: 'center', inline: 'center' });
+            node.click();
+            return { ok: true };
+          }
+        });
+
+        if (!clickResult.result.ok) {
+          throw new Error(clickResult.result.error);
+        }
+
+        logs.push(`✅ ${stepLabel}: クリック成功`);
+        continue;
+      }
+
+      if (step.type === 'paste') {
+        if (!hasValue) {
+          throw new Error('paste前にcopy手順がありません。');
+        }
+
+        const [pasteResult] = await chrome.scripting.executeScript({
+          target: { tabId: targetTabId },
+          args: [step.selector, lastValue],
+          func: (selector, value) => {
+            const node = document.querySelector(selector);
+            if (!node) {
+              return { ok: false, error: `dest not found: ${selector}` };
+            }
+            const tag = node.tagName.toLowerCase();
+            if (tag !== 'input') {
+              return { ok: false, error: `dest is not input: ${selector}` };
+            }
+            node.value = value;
+            node.dispatchEvent(new Event('input', { bubbles: true }));
+            node.dispatchEvent(new Event('change', { bubbles: true }));
+            return { ok: true };
+          }
+        });
+
+        if (!pasteResult.result.ok) {
+          throw new Error(pasteResult.result.error);
+        }
+
+        logs.push(`✅ ${stepLabel}: ペースト成功`);
+        continue;
+      }
+
+      logs.push(`⚠️ ${stepLabel}: 未対応手順 type=${step.type}`);
     } catch (error) {
-      logs.push(`❌ ${mapping.label}: ${error.message}`);
+      logs.push(`❌ ${stepLabel}: ${error.message}`);
     }
   }
 
@@ -238,7 +342,7 @@ async function startPairing(sourceTabId, destTabId) {
   state.sourceUrl = sourceTab.url;
   state.destUrl = destTab.url;
   state.pendingCopy = null;
-  state.mappings = [];
+  state.steps = [];
   state.status = 'copy_waiting';
 
   await sendToTab(sourceTabId, { type: 'START_SELECTION', mode: 'copy' });
@@ -268,12 +372,27 @@ async function stopPairing(focusUi = false) {
   }
 }
 
+async function startClickStepFromSource(requestTabId) {
+  if (state.status !== 'copy_waiting') {
+    throw new Error('クリック手順追加はコピー待ち状態でのみ実行できます。');
+  }
+  if (requestTabId !== state.sourceTabId) {
+    throw new Error('クリック手順追加はコピー元タブで→キーを押してください。');
+  }
+
+  await sendToTab(state.sourceTabId, { type: 'STOP_SELECTION' });
+  await ensureInjected(state.destTabId);
+  await sendToTab(state.destTabId, { type: 'START_SELECTION', mode: 'click' });
+  state.status = 'click_waiting_dest';
+  await focusTab(state.destTabId);
+}
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   (async () => {
     switch (message?.type) {
       case 'APP_INIT': {
         state.uiTabId = message.uiTabId;
-        responseOk(sendResponse, { session: { statusText: statusText(), mappings: state.mappings } });
+        responseOk(sendResponse, { session: { statusText: statusText(), steps: state.steps } });
         break;
       }
       case 'GET_TABS': {
@@ -306,7 +425,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             destTabId: state.destTabId,
             sourceUrl: state.sourceUrl,
             destUrl: state.destUrl,
-            mappings: state.mappings
+            steps: state.steps,
+            pairCount: pairCountFromSteps(state.steps)
           }
         });
         break;
@@ -316,8 +436,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         if (!name) {
           throw new Error('プロジェクト名を入力してください。');
         }
-        if (!state.mappings.length) {
-          throw new Error('ペアが0件のため保存できません。');
+        if (!state.steps.length) {
+          throw new Error('手順が0件のため保存できません。');
+        }
+        if (!pairCountFromSteps(state.steps)) {
+          throw new Error('ペア(コピー→ペースト)が0件のため保存できません。');
         }
         if (state.pendingCopy) {
           throw new Error('1対1が未完了です。ペースト先を選択してください。');
@@ -328,7 +451,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           projectName: name,
           sourceUrl: state.sourceUrl,
           destUrl: state.destUrl,
-          mappings: state.mappings
+          steps: state.steps,
+          mappings: buildMappingsFromSteps(state.steps)
         });
         await saveProjects(projects);
         await stopPairing(false);
@@ -338,7 +462,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }
       case 'LIST_PROJECTS': {
         const projects = await loadProjects();
-        responseOk(sendResponse, { projects });
+        responseOk(sendResponse, {
+          projects: projects.map((project) => {
+            const steps = projectSteps(project);
+            return {
+              ...project,
+              steps,
+              mappings: project.mappings || buildMappingsFromSteps(steps)
+            };
+          })
+        });
         break;
       }
       case 'RUN_PROJECT': {
@@ -388,11 +521,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         responseOk(sendResponse, { diagnostic });
         break;
       }
+      case 'CLICK_MODE_REQUESTED': {
+        if (!sender.tab?.id) {
+          throw new Error('tab情報が取得できません。');
+        }
+        await startClickStepFromSource(sender.tab.id);
+        responseOk(sendResponse, {});
+        break;
+      }
       case 'ELEMENT_SELECTED': {
         if (!sender.tab?.id) {
           throw new Error('tab情報が取得できません。');
         }
         const tabId = sender.tab.id;
+
         if (state.status === 'copy_waiting' && tabId === state.sourceTabId) {
           state.pendingCopy = {
             sourceSelector: message.selector
@@ -409,13 +551,38 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           if (message.tagName !== 'input') {
             throw new Error('ペースト先はinput要素のみ選択できます。');
           }
-          state.mappings.push({
-            mappingId: crypto.randomUUID(),
-            label: `項目${state.mappings.length + 1}`,
-            sourceSelector: state.pendingCopy.sourceSelector,
-            destSelector: message.selector
+          const pairIndex = pairCountFromSteps(state.steps) + 1;
+          state.steps.push({
+            stepId: crypto.randomUUID(),
+            type: 'copy',
+            tabRole: 'source',
+            selector: state.pendingCopy.sourceSelector,
+            label: `項目${pairIndex}-copy`
+          });
+          state.steps.push({
+            stepId: crypto.randomUUID(),
+            type: 'paste',
+            tabRole: 'dest',
+            selector: message.selector,
+            label: `項目${pairIndex}-paste`
           });
           state.pendingCopy = null;
+          state.status = 'copy_waiting';
+          await sendToTab(state.destTabId, { type: 'STOP_SELECTION' });
+          await sendToTab(state.sourceTabId, { type: 'START_SELECTION', mode: 'copy' });
+          await focusTab(state.sourceTabId);
+          responseOk(sendResponse, {});
+          return;
+        }
+
+        if (state.status === 'click_waiting_dest' && tabId === state.destTabId) {
+          state.steps.push({
+            stepId: crypto.randomUUID(),
+            type: 'click',
+            tabRole: 'dest',
+            selector: message.selector,
+            label: `クリック${state.steps.filter((step) => step.type === 'click').length + 1}`
+          });
           state.status = 'copy_waiting';
           await sendToTab(state.destTabId, { type: 'STOP_SELECTION' });
           await sendToTab(state.sourceTabId, { type: 'START_SELECTION', mode: 'copy' });

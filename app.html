@@ -9,11 +9,11 @@
   <body>
     <header>
       <h1>Copy & Paste Mapper</h1>
-      <p>コピー元 → ペースト先を1対1で作成して保存/実行します。</p>
+      <p>コピー→ペーストに加えて、→キーでクリック手順を挿入できます。</p>
     </header>
 
     <section class="panel">
-      <h2>ペア作成</h2>
+      <h2>手順作成</h2>
       <div class="grid">
         <label>
           コピー元タブ
@@ -31,6 +31,7 @@
         <button id="stop-pairing">停止</button>
       </div>
       <div id="state-line"></div>
+      <div>ヒント: コピー元で <strong>→</strong> キーを押すと、ペースト先クリック手順の追加モードになります。</div>
       <div id="pair-count"></div>
       <ul id="pair-list"></ul>
       <div class="save-row">

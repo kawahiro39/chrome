@@ -88,10 +88,23 @@
     }
   }
 
+  function modeHint(mode) {
+    if (mode === 'copy') {
+      return 'Copy要素をクリック（→でクリック手順追加 / Escで停止）';
+    }
+    if (mode === 'paste') {
+      return 'Paste inputをクリック（Escで停止）';
+    }
+    if (mode === 'click') {
+      return 'クリック手順の対象をクリック（実際にはクリックしません）';
+    }
+    return '選択中';
+  }
+
   function startSelection(mode) {
     state.active = true;
     state.mode = mode;
-    setBadge(mode === 'copy' ? 'Copy要素をクリック（Escで停止）' : 'Paste inputをクリック（Escで停止）');
+    setBadge(modeHint(mode));
   }
 
   function stopSelection() {
@@ -111,6 +124,13 @@
     return target;
   }
 
+  function blockInteraction(event) {
+    if (!state.active) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation();
+  }
+
   document.addEventListener(
     'mousemove',
     (event) => {
@@ -127,12 +147,18 @@
     true
   );
 
+  document.addEventListener('pointerdown', blockInteraction, true);
+  document.addEventListener('pointerup', blockInteraction, true);
+  document.addEventListener('mousedown', blockInteraction, true);
+  document.addEventListener('mouseup', blockInteraction, true);
+
   document.addEventListener(
     'click',
     (event) => {
       if (!state.active) return;
       event.preventDefault();
       event.stopPropagation();
+      event.stopImmediatePropagation();
 
       const target = pickTarget(event.target);
       if (!target) {
@@ -163,11 +189,25 @@
     'keydown',
     (event) => {
       if (!state.active) return;
+
       if (event.key === 'Escape') {
         event.preventDefault();
         event.stopPropagation();
         stopSelection();
         sendMessage('ESC_PRESSED');
+        return;
+      }
+
+      if (event.key === 'ArrowRight' && state.mode === 'copy') {
+        event.preventDefault();
+        event.stopPropagation();
+        sendMessage('CLICK_MODE_REQUESTED', {}, (response) => {
+          if (!response.ok) {
+            setBadge(`エラー: ${response.error}`);
+            return;
+          }
+          stopSelection();
+        });
       }
     },
     true

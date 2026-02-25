@@ -59,13 +59,25 @@ function setSelectOptions(select, items, placeholder) {
   }
 }
 
+function projectStats(project) {
+  const steps = project.steps || [];
+  const pairTotal = steps.filter((step) => step.type === 'paste').length;
+  return { stepsTotal: steps.length, pairTotal };
+}
+
 function renderSession(session) {
+  const steps = session.steps || [];
+  const pairTotal = typeof session.pairCount === 'number'
+    ? session.pairCount
+    : steps.filter((step) => step.type === 'paste').length;
+
   stateLine.textContent = `状態: ${session.statusText}`;
-  pairCount.textContent = `現在のペア数: ${session.mappings.length}`;
+  pairCount.textContent = `現在の手順数: ${steps.length}（ペア数: ${pairTotal}）`;
   pairList.innerHTML = '';
-  for (const mapping of session.mappings) {
+
+  for (const [index, step] of steps.entries()) {
     const li = document.createElement('li');
-    li.textContent = `${mapping.label} / Copy: ${mapping.sourceSelector} / Paste: ${mapping.destSelector}`;
+    li.textContent = `手順${index + 1} [${step.type}/${step.tabRole}] ${step.selector}`;
     pairList.appendChild(li);
   }
 }
@@ -80,9 +92,10 @@ function renderProjects(projects) {
     return;
   }
   for (const project of projects) {
+    const { stepsTotal, pairTotal } = projectStats(project);
     const opt = document.createElement('option');
     opt.value = project.projectId;
-    opt.textContent = `${project.projectName} (${project.mappings.length}件)`;
+    opt.textContent = `${project.projectName} (手順${stepsTotal} / ペア${pairTotal})`;
     projectSelect.appendChild(opt);
   }
 }
