@@ -211,6 +211,7 @@ async function runProject(project, sourceTabId, destTabId) {
     }
   }
 
+  await focusTab(destTab.id);
   return logs;
 }
 
