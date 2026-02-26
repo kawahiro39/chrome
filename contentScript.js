@@ -96,10 +96,10 @@
       return 'Paste inputをクリック（Escで停止）';
     }
     if (mode === 'click') {
-      return 'クリック手順の対象をクリック（実際にはクリックしません。→でドロップダウン手順へ）';
+      return 'クリック対象をクリック（実クリックは無効）。→でドロップダウン手順へ';
     }
     if (mode === 'select') {
-      return 'ドロップダウンの値を実際に選択してください（changeで手順化）';
+      return 'select要素をクリック→値を選択（プロンプト）';
     }
     return '選択中';
   }
@@ -125,20 +125,43 @@
       return target.closest('input, textarea');
     }
     if (state.mode === 'select') {
-      return target.closest('select, option');
+      return target.closest('select');
     }
     return target;
   }
 
-  function shouldBlockInteraction() {
-    return state.active && state.mode !== 'select';
-  }
-
   function blockInteraction(event) {
-    if (!shouldBlockInteraction()) return;
+    if (!state.active) return;
     event.preventDefault();
     event.stopPropagation();
     event.stopImmediatePropagation();
+  }
+
+  function chooseSelectOption(selectEl) {
+    const options = Array.from(selectEl.options || []);
+    if (!options.length) {
+      return null;
+    }
+
+    const lines = options.map((opt, idx) => `${idx}: [${opt.value}] ${(opt.textContent || '').trim()}`);
+    const input = window.prompt(`選択するoptionの index または value を入力:\n${lines.join('\n')}`, String(selectEl.selectedIndex || 0));
+    if (input == null) {
+      return null;
+    }
+
+    const trimmed = input.trim();
+    if (!trimmed) {
+      return options[selectEl.selectedIndex] || options[0];
+    }
+
+    if (/^\d+$/.test(trimmed)) {
+      const idx = Number(trimmed);
+      if (idx >= 0 && idx < options.length) {
+        return options[idx];
+      }
+    }
+
+    return options.find((opt) => opt.value === trimmed || (opt.textContent || '').trim() === trimmed) || null;
   }
 
   document.addEventListener(
@@ -166,10 +189,6 @@
     'click',
     (event) => {
       if (!state.active) return;
-      if (state.mode === 'select') {
-        return;
-      }
-
       event.preventDefault();
       event.stopPropagation();
       event.stopImmediatePropagation();
@@ -179,42 +198,37 @@
         return;
       }
 
-      const selector = getSelector(target);
-      const tagName = target.tagName.toLowerCase();
-      sendMessage(
-        'ELEMENT_SELECTED',
-        {
-          selector,
-          tagName
-        },
-        (response) => {
-          if (!response.ok) {
-            setBadge(`エラー: ${response.error}`);
-            return;
-          }
-          stopSelection();
+      if (state.mode === 'select') {
+        const selectedOption = chooseSelectOption(target);
+        if (!selectedOption) {
+          setBadge('選択がキャンセルされました');
+          return;
         }
-      );
-    },
-    true
-  );
 
-  document.addEventListener(
-    'change',
-    (event) => {
-      if (!state.active || state.mode !== 'select') return;
-      const target = event.target;
-      const selectEl = target instanceof Element ? target.closest('select') : null;
-      if (!selectEl) return;
+        sendMessage(
+          'ELEMENT_SELECTED',
+          {
+            selector: getSelector(target),
+            tagName: 'select',
+            selectedValue: selectedOption.value,
+            selectedText: (selectedOption.textContent || '').trim()
+          },
+          (response) => {
+            if (!response.ok) {
+              setBadge(`エラー: ${response.error}`);
+              return;
+            }
+            stopSelection();
+          }
+        );
+        return;
+      }
 
-      const selectedOption = selectEl.options[selectEl.selectedIndex] || null;
       sendMessage(
         'ELEMENT_SELECTED',
         {
-          selector: getSelector(selectEl),
-          tagName: 'select',
-          selectedValue: selectEl.value,
-          selectedText: selectedOption ? (selectedOption.textContent || '').trim() : ''
+          selector: getSelector(target),
+          tagName: target.tagName.toLowerCase()
         },
         (response) => {
           if (!response.ok) {
@@ -247,9 +261,7 @@
         sendMessage('CLICK_MODE_REQUESTED', {}, (response) => {
           if (!response.ok) {
             setBadge(`エラー: ${response.error}`);
-            return;
           }
-          stopSelection();
         });
         return;
       }
@@ -260,9 +272,7 @@
         sendMessage('SELECT_MODE_REQUESTED', {}, (response) => {
           if (!response.ok) {
             setBadge(`エラー: ${response.error}`);
-            return;
           }
-          stopSelection();
         });
       }
     },

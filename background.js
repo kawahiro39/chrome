@@ -290,9 +290,36 @@ async function runProject(project, sourceTabId, destTabId) {
 
             const href = typeof node.getAttribute === 'function' ? node.getAttribute('href') || '' : '';
             if (/^javascript:/i.test(href)) {
-              const script = href.replace(/^javascript:/i, '');
+              const script = href.replace(/^javascript:/i, '').trim().replace(/;$/, '');
+              const fnMatch = script.match(/^([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\((.*)\)$/);
+
               try {
-                view.eval(script);
+                if (fnMatch) {
+                  const fnPath = fnMatch[1].split('.');
+                  const argsRaw = fnMatch[2].trim();
+                  const args = argsRaw
+                    ? Function(`return [${argsRaw}]`)()
+                    : [];
+                  let ctx = view;
+                  let fn = view;
+                  for (const key of fnPath) {
+                    fn = fn[key];
+                    if (fn == null) {
+                      throw new Error(`function not found: ${fnPath.join('.')}`);
+                    }
+                    if (key !== fnPath[fnPath.length - 1]) {
+                      ctx = fn;
+                    }
+                  }
+                  if (typeof fn !== 'function') {
+                    throw new Error(`target is not function: ${fnPath.join('.')}`);
+                  }
+                  fn.apply(ctx, args);
+                } else {
+                  const jump = view.document.createElement('a');
+                  jump.href = href;
+                  jump.click();
+                }
               } catch (error) {
                 return { ok: false, error: `javascript href failed: ${error.message}` };
               }
