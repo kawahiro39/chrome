@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>コピペ・マッパー</title>
+    <link rel="stylesheet" href="app.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <h1>コピペ・マッパー</h1>
+      <div class="avatar">◉</div>
+    </header>
+
+    <main class="canvas">
+      <section class="main-card">
+        <div class="selector-col">
+          <label>コピー元タブ</label>
+          <select id="source-tab"></select>
+        </div>
+
+        <div class="center-col">
+          <div id="state-line">● 待機中</div>
+          <button id="start-pairing" class="play" aria-label="開始">▶</button>
+          <div class="mini-actions">
+            <button id="refresh-tabs">一覧更新</button>
+            <button id="resume-pairing">再開</button>
+            <button id="stop-pairing">停止</button>
+          </div>
+        </div>
+
+        <div class="selector-col">
+          <label>貼り付け先タブ</label>
+          <select id="dest-tab"></select>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="save-row">
+          <input id="project-name" placeholder="プロジェクト名を入力" />
+          <button id="save-project">保存</button>
+        </div>
+      </section>
+
+      <section class="sub-card">
+        <div class="sub-head">
+          <h2>保存済みプロジェクト</h2>
+          <button id="run-project">現在タブで実行</button>
+        </div>
+        <select id="project-select"></select>
+
+        <div class="exec-settings">
+          <label for="execution-mode">実行方式</label>
+          <select id="execution-mode">
+            <option value="sequential">順番に実行</option>
+            <option value="parallel">同時実行</option>
+          </select>
+          <label for="step-delay">手順間タイムラグ（秒）</label>
+          <input id="step-delay" type="number" min="0.1" max="5" step="0.1" value="0.3" />
+          <button id="save-execution-settings">実行設定を保存</button>
+        </div>
+        <div id="pair-count"></div>
+        <ul id="pair-list"></ul>
+
+        <div class="step-editor-head">
+          <strong>プロジェクト手順を編集</strong>
+          <button id="rename-project">名称変更</button>
+        </div>
+        <ul id="project-step-list" class="editable-list"></ul>
+
+        <ul id="run-log"></ul>
+      </section>
+
+      <details class="sub-card diagnostic-wrap">
+        <summary>診断</summary>
+        <button id="diagnose">診断実行</button>
+        <pre id="diagnostic-output"></pre>
+      </details>
+    </main>
+
+    <footer class="foot">ULTRA-MINIMALIST INTERFACE V1.0 / JAPANESE EDITION</footer>
+    <div id="toast" aria-live="polite"></div>
+
+    <script src="app.js"></script>
+  </body>
+</html>
