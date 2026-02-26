@@ -681,6 +681,47 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         responseOk(sendResponse, { project });
         break;
       }
+
+      case 'MOVE_PROJECT_STEP': {
+        const { projectId, stepId, direction } = message;
+        if (!projectId || !stepId) {
+          throw new Error('projectIdとstepIdが必要です。');
+        }
+        if (direction !== 'up' && direction !== 'down') {
+          throw new Error('directionはup/downを指定してください。');
+        }
+
+        const projects = await loadProjects();
+        const projectIndex = projects.findIndex((item) => item.projectId === projectId);
+        if (projectIndex < 0) {
+          throw new Error('プロジェクトが見つかりません。');
+        }
+
+        const project = normalizeProject(projects[projectIndex]);
+        const index = project.steps.findIndex((step) => step.stepId === stepId);
+        if (index < 0) {
+          throw new Error('手順が見つかりません。');
+        }
+
+        const targetIndex = direction === 'up' ? index - 1 : index + 1;
+        if (targetIndex < 0 || targetIndex >= project.steps.length) {
+          responseOk(sendResponse, { project });
+          break;
+        }
+
+        const nextSteps = [...project.steps];
+        const temp = nextSteps[index];
+        nextSteps[index] = nextSteps[targetIndex];
+        nextSteps[targetIndex] = temp;
+
+        project.steps = nextSteps;
+        project.mappings = buildMappingsFromSteps(nextSteps);
+        projects[projectIndex] = project;
+        await saveProjects(projects);
+
+        responseOk(sendResponse, { project });
+        break;
+      }
       case 'RUN_PROJECT': {
         if (!message.projectId) {
           throw new Error('プロジェクトを選択してください。');

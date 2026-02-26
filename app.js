@@ -82,11 +82,20 @@ function selectedProject() {
   return projectsCache.find((project) => project.projectId === projectSelect.value) || null;
 }
 
-function stepSummary(step) {
-  if (step.type === 'select') {
-    return `${step.type}/${step.tabRole} ${step.selector} => ${step.selectedText || step.selectedValue || ''}`;
+function stepLabel(step) {
+  if (step.type === 'copy') {
+    return 'コピー（値を取得）';
   }
-  return `${step.type}/${step.tabRole} ${step.selector}`;
+  if (step.type === 'paste') {
+    return 'ペースト（入力欄へ反映）';
+  }
+  if (step.type === 'click') {
+    return 'クリック（要素を実行）';
+  }
+  if (step.type === 'select') {
+    return `ドロップダウン選択（${step.selectedText || step.selectedValue || '未指定'}）`;
+  }
+  return `不明ステップ(${step.type})`;
 }
 
 function renderStepEditor(project) {
@@ -110,22 +119,53 @@ function renderStepEditor(project) {
     const li = document.createElement('li');
     li.dataset.stepId = step.stepId;
 
-    const text = document.createElement('span');
-    text.textContent = `手順${index + 1}: ${stepSummary(step)}`;
-    li.appendChild(text);
+    const main = document.createElement('div');
+    main.className = 'step-main';
+    main.textContent = `手順${index + 1}: ${stepLabel(step)} / ${step.tabRole}`;
+    li.appendChild(main);
+
+    const details = document.createElement('details');
+    details.className = 'code-detail';
+    const summary = document.createElement('summary');
+    summary.textContent = 'ソースコード(セレクタ)を表示';
+    details.appendChild(summary);
+    const code = document.createElement('code');
+    code.textContent = step.selector || '(selectorなし)';
+    details.appendChild(code);
+    li.appendChild(details);
+
+    const actions = document.createElement('div');
+    actions.className = 'step-actions';
+
+    const upBtn = document.createElement('button');
+    upBtn.textContent = '↑';
+    upBtn.className = 'move-btn';
+    upBtn.dataset.stepId = step.stepId;
+    upBtn.dataset.direction = 'up';
+    upBtn.disabled = index === 0;
+    actions.appendChild(upBtn);
+
+    const downBtn = document.createElement('button');
+    downBtn.textContent = '↓';
+    downBtn.className = 'move-btn';
+    downBtn.dataset.stepId = step.stepId;
+    downBtn.dataset.direction = 'down';
+    downBtn.disabled = index === steps.length - 1;
+    actions.appendChild(downBtn);
 
     const editBtn = document.createElement('button');
-    editBtn.textContent = '修正';
+    editBtn.textContent = '修正(組み直し)';
     editBtn.className = 'edit-btn';
     editBtn.dataset.stepId = step.stepId;
-    li.appendChild(editBtn);
+    actions.appendChild(editBtn);
 
     const deleteBtn = document.createElement('button');
     deleteBtn.textContent = '削除';
     deleteBtn.className = 'delete-btn';
     deleteBtn.dataset.stepId = step.stepId;
-    li.appendChild(deleteBtn);
+    actions.appendChild(deleteBtn);
 
+    li.appendChild(actions);
     projectStepList.appendChild(li);
   }
 }
@@ -208,27 +248,6 @@ async function safeAction(action, successMessage) {
   } catch (error) {
     showToast(`エラー: ${error.message}`);
   }
-}
-
-function buildEditPayload(step) {
-  const selector = window.prompt('selectorを入力してください', step.selector || '');
-  if (selector === null) return null;
-
-  const payload = {
-    selector: selector.trim() || step.selector,
-    label: step.label || ''
-  };
-
-  if (step.type === 'select') {
-    const value = window.prompt('selectedValueを入力してください', step.selectedValue || '');
-    if (value === null) return null;
-    const text = window.prompt('selectedTextを入力してください', step.selectedText || '');
-    if (text === null) return null;
-    payload.selectedValue = value;
-    payload.selectedText = text;
-  }
-
-  return payload;
 }
 
 async function initialize() {
@@ -323,11 +342,6 @@ projectStepList.addEventListener('click', (event) => {
 
   const stepId = button.dataset.stepId;
   if (!stepId) return;
-  const step = (project.steps || []).find((item) => item.stepId === stepId);
-  if (!step) {
-    showToast('対象手順が見つかりません。');
-    return;
-  }
 
   if (button.classList.contains('delete-btn')) {
     safeAction(async () => {
@@ -340,18 +354,32 @@ projectStepList.addEventListener('click', (event) => {
     return;
   }
 
-  if (button.classList.contains('edit-btn')) {
-    const patch = buildEditPayload(step);
-    if (!patch) return;
-
+  if (button.classList.contains('move-btn')) {
     safeAction(async () => {
-      await sendMessage('UPDATE_PROJECT_STEP', {
+      await sendMessage('MOVE_PROJECT_STEP', {
         projectId: project.projectId,
         stepId,
-        patch
+        direction: button.dataset.direction
       });
       await refreshProjects();
-    }, '手順を更新しました');
+    }, '手順を並べ替えました');
+    return;
+  }
+
+  if (button.classList.contains('edit-btn')) {
+    safeAction(async () => {
+      await sendMessage('DELETE_PROJECT_STEP', {
+        projectId: project.projectId,
+        stepId
+      });
+      await refreshProjects();
+
+      await sendMessage('START_PAIRING', {
+        sourceTabId: Number(sourceSelect.value),
+        destTabId: Number(destSelect.value)
+      });
+      await refreshSession();
+    }, '手順を削除して組み直しモードを開始しました（コピー元へ移動）');
   }
 });
 
