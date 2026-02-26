@@ -9,7 +9,8 @@ const state = {
   status: 'idle',
   pendingCopy: null,
   steps: [],
-  runLogs: []
+  runLogs: [],
+  editingContext: null
 };
 
 function responseOk(sendResponse, payload = {}) {
@@ -30,6 +31,14 @@ function statusText() {
       return 'クリック待ち（ペースト先タブ / →でもう一度でドロップダウン選択）';
     case 'select_waiting_dest':
       return 'ドロップダウン選択待ち（ペースト先タブ）';
+    case 'editing_copy':
+      return '修正中（コピー元を選択してください）';
+    case 'editing_paste':
+      return '修正中（ペースト先inputを選択してください）';
+    case 'editing_click':
+      return '修正中（クリック先を選択してください）';
+    case 'editing_select':
+      return '修正中（ドロップダウンを選択してください）';
     case 'stopped':
       return '停止中';
     default:
@@ -95,6 +104,7 @@ function resetSession(keepTabs = true) {
   state.status = 'idle';
   state.pendingCopy = null;
   state.steps = [];
+  state.editingContext = null;
   if (!keepTabs) {
     state.sourceTabId = null;
     state.destTabId = null;
@@ -476,10 +486,148 @@ async function resumePairing() {
 async function stopPairing(focusUi = false) {
   state.status = 'stopped';
   state.pendingCopy = null;
+  state.editingContext = null;
   await stopSelectionOnTabs();
+  const tabIds = [state.sourceTabId, state.destTabId].filter(Boolean);
+  for (const tabId of tabIds) {
+    await sendToTab(tabId, { type: 'CLEAR_STEP_HIGHLIGHTS' });
+  }
   if (focusUi && state.uiTabId) {
     await focusTab(state.uiTabId);
   }
+}
+
+
+function stepColor(step, activeStepId) {
+  if (step.stepId === activeStepId) {
+    return '#ef4444';
+  }
+  return step.tabRole === 'source' ? '#2563eb' : '#16a34a';
+}
+
+async function applyProjectHighlights(project, activeStepId) {
+  const sourceHighlights = [];
+  const destHighlights = [];
+  for (const step of project.steps || []) {
+    const item = {
+      selector: step.selector,
+      color: stepColor(step, activeStepId),
+      label: `${step.type}/${step.tabRole}${step.stepId === activeStepId ? ' (編集中)' : ''}`
+    };
+    if (step.tabRole === 'source') {
+      sourceHighlights.push(item);
+    } else if (step.tabRole === 'dest') {
+      destHighlights.push(item);
+    }
+  }
+
+  if (state.sourceTabId) {
+    await sendToTab(state.sourceTabId, { type: 'APPLY_STEP_HIGHLIGHTS', highlights: sourceHighlights });
+  }
+  if (state.destTabId) {
+    await sendToTab(state.destTabId, { type: 'APPLY_STEP_HIGHLIGHTS', highlights: destHighlights });
+  }
+}
+
+async function prepareProjectStepEdit(projectId, stepId, sourceTabId, destTabId) {
+  if (!projectId || !stepId) {
+    throw new Error('projectIdとstepIdが必要です。');
+  }
+  if (!sourceTabId || !destTabId) {
+    throw new Error('コピー元とペースト先タブを選択してください。');
+  }
+  if (sourceTabId === destTabId) {
+    throw new Error('コピー元とペースト先は別タブを選択してください。');
+  }
+
+  const sourceTab = await chrome.tabs.get(sourceTabId);
+  const destTab = await chrome.tabs.get(destTabId);
+  if (isRestrictedUrl(sourceTab.url) || isRestrictedUrl(destTab.url)) {
+    throw new Error('制限ページは選択できません。http/httpsページを選んでください。');
+  }
+
+  const projects = await loadProjects();
+  const project = projects.find((item) => item.projectId === projectId);
+  if (!project) {
+    throw new Error('プロジェクトが見つかりません。');
+  }
+  const normalized = normalizeProject(project);
+  const step = normalized.steps.find((item) => item.stepId === stepId);
+  if (!step) {
+    throw new Error('手順が見つかりません。');
+  }
+
+  await ensureInjected(sourceTabId);
+  await ensureInjected(destTabId);
+
+  state.sourceTabId = sourceTabId;
+  state.destTabId = destTabId;
+  state.sourceUrl = sourceTab.url;
+  state.destUrl = destTab.url;
+  state.pendingCopy = null;
+  state.steps = [];
+
+  const targetTabId = step.tabRole === 'source' ? sourceTabId : destTabId;
+  const mode = step.type === 'paste' ? 'paste' : step.type === 'select' ? 'select' : step.type === 'click' ? 'click' : 'copy';
+
+  state.editingContext = { projectId, stepId, targetTabId, mode };
+  state.status = `editing_${step.type}`;
+
+  await stopSelectionOnTabs();
+  await applyProjectHighlights(normalized, stepId);
+  await sendToTab(targetTabId, { type: 'START_SELECTION', mode });
+  await focusTab(targetTabId);
+  return { step };
+}
+
+async function commitProjectStepEdit(message, senderTabId) {
+  const ctx = state.editingContext;
+  if (!ctx) return false;
+  if (senderTabId !== ctx.targetTabId) {
+    throw new Error('編集中の対象タブではありません。');
+  }
+
+  const projects = await loadProjects();
+  const projectIndex = projects.findIndex((item) => item.projectId === ctx.projectId);
+  if (projectIndex < 0) {
+    throw new Error('プロジェクトが見つかりません。');
+  }
+  const project = normalizeProject(projects[projectIndex]);
+  const stepIndex = project.steps.findIndex((item) => item.stepId === ctx.stepId);
+  if (stepIndex < 0) {
+    throw new Error('手順が見つかりません。');
+  }
+
+  const step = { ...project.steps[stepIndex] };
+  if (step.type === 'paste' && message.tagName !== 'input') {
+    throw new Error('ペースト手順はinput要素のみ選択できます。');
+  }
+  if (step.type === 'select' && message.tagName !== 'select') {
+    throw new Error('ドロップダウン手順はselect要素を選択してください。');
+  }
+
+  step.selector = message.selector;
+  if (step.type === 'copy') {
+    step.sampleText = message.textSample || '';
+  }
+  if (step.type === 'select') {
+    step.selectedValue = message.selectedValue || '';
+    step.selectedText = message.selectedText || '';
+  }
+
+  project.steps[stepIndex] = step;
+  project.mappings = buildMappingsFromSteps(project.steps);
+  projects[projectIndex] = project;
+  await saveProjects(projects);
+
+  state.editingContext = null;
+  state.status = 'stopped';
+  await stopSelectionOnTabs();
+  if (state.sourceTabId) await sendToTab(state.sourceTabId, { type: 'CLEAR_STEP_HIGHLIGHTS' });
+  if (state.destTabId) await sendToTab(state.destTabId, { type: 'CLEAR_STEP_HIGHLIGHTS' });
+  if (state.uiTabId) await focusTab(state.uiTabId);
+  chrome.runtime.sendMessage({ type: 'PROJECTS_UPDATED' });
+  return true;
 }
 
 async function startClickStepFromSource(requestTabId) {
@@ -611,6 +759,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         projects[index] = project;
         await saveProjects(projects);
         responseOk(sendResponse, { project });
+        break;
+      }
+      case 'PREPARE_PROJECT_STEP_EDIT': {
+        const result = await prepareProjectStepEdit(
+          message.projectId,
+          message.stepId,
+          message.sourceTabId,
+          message.destTabId
+        );
+        responseOk(sendResponse, result);
         break;
       }
       case 'UPDATE_PROJECT_STEP': {
@@ -790,6 +948,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           throw new Error('tab情報が取得できません。');
         }
         const tabId = sender.tab.id;
+
+        if (state.editingContext) {
+          const updated = await commitProjectStepEdit(message, tabId);
+          if (updated) {
+            responseOk(sendResponse, {});
+            return;
+          }
+        }
 
         if (state.status === 'copy_waiting' && tabId === state.sourceTabId) {
           state.pendingCopy = {

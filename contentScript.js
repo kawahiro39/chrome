@@ -9,7 +9,8 @@
     active: false,
     hoverEl: null,
     outlineBackup: '',
-    badge: null
+    badge: null,
+    highlights: []
   };
 
   function sendMessage(type, payload = {}, callback = () => {}) {
@@ -88,6 +89,38 @@
     }
   }
 
+  function clearStepHighlights() {
+    for (const item of state.highlights) {
+      if (!item.el || !item.el.isConnected) continue;
+      item.el.style.outline = item.outlineBackup;
+      item.el.style.backgroundColor = item.bgBackup;
+    }
+    state.highlights = [];
+  }
+
+  function applyStepHighlights(highlights = []) {
+    clearStepHighlights();
+    for (const item of highlights) {
+      if (!item || !item.selector) continue;
+      let el;
+      try {
+        el = document.querySelector(item.selector);
+      } catch (_error) {
+        continue;
+      }
+      if (!el) continue;
+      const outlineBackup = el.style.outline;
+      const bgBackup = el.style.backgroundColor;
+      const color = item.color || '#2563eb';
+      el.style.outline = `3px solid ${color}`;
+      el.style.backgroundColor = 'rgba(255, 235, 59, 0.16)';
+      if (item.label) {
+        el.setAttribute('data-copypaste-mapper-label', item.label);
+      }
+      state.highlights.push({ el, outlineBackup, bgBackup });
+    }
+  }
+
   function modeHint(mode) {
     if (mode === 'copy') {
       return 'Copy要素をクリック（→1回:クリック手順 / →2回:ドロップダウン手順）';
@@ -105,6 +138,7 @@
   }
 
   function startSelection(mode) {
+    clearStepHighlights();
     state.active = true;
     state.mode = mode;
     setBadge(modeHint(mode));
@@ -293,6 +327,16 @@
     }
     if (message?.type === 'STOP_SELECTION') {
       stopSelection();
+      sendResponse({ ok: true });
+      return;
+    }
+    if (message?.type === 'APPLY_STEP_HIGHLIGHTS') {
+      applyStepHighlights(message.highlights || []);
+      sendResponse({ ok: true });
+      return;
+    }
+    if (message?.type === 'CLEAR_STEP_HIGHLIGHTS') {
+      clearStepHighlights();
       sendResponse({ ok: true });
       return;
     }

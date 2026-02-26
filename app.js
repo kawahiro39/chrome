@@ -155,7 +155,7 @@ function renderStepEditor(project) {
     actions.appendChild(downBtn);
 
     const editBtn = document.createElement('button');
-    editBtn.textContent = '修正(組み直し)';
+    editBtn.textContent = '修正';
     editBtn.className = 'edit-btn';
     editBtn.dataset.stepId = step.stepId;
     actions.appendChild(editBtn);
@@ -369,18 +369,17 @@ projectStepList.addEventListener('click', (event) => {
 
   if (button.classList.contains('edit-btn')) {
     safeAction(async () => {
-      await sendMessage('DELETE_PROJECT_STEP', {
+      const result = await sendMessage('PREPARE_PROJECT_STEP_EDIT', {
         projectId: project.projectId,
-        stepId
-      });
-      await refreshProjects();
-
-      await sendMessage('START_PAIRING', {
+        stepId,
         sourceTabId: Number(sourceSelect.value),
         destTabId: Number(destSelect.value)
       });
       await refreshSession();
-    }, '手順を削除して組み直しモードを開始しました（コピー元へ移動）');
+      const step = result.step || {};
+      const roleText = step.tabRole === 'dest' ? 'ペースト先タブ' : 'コピー元タブ';
+      showToast(`修正モード: ${roleText}で対象要素を再選択してください`);
+    }, null);
   }
 });
 
@@ -391,6 +390,14 @@ projectSelect.addEventListener('change', () => {
 chrome.runtime.onMessage.addListener((message) => {
   if (message?.type === 'RUN_LOG_UPDATE') {
     renderRunLog(message.logs);
+    return;
+  }
+
+  if (message?.type === 'PROJECTS_UPDATED') {
+    safeAction(async () => {
+      await refreshProjects();
+      await refreshSession();
+    }, '手順の修正を保存しました');
   }
 });
 
