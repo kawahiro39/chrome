@@ -77,7 +77,11 @@ function renderSession(session) {
 
   for (const [index, step] of steps.entries()) {
     const li = document.createElement('li');
-    li.textContent = `手順${index + 1} [${step.type}/${step.tabRole}] ${step.selector}`;
+    let extra = '';
+    if (step.type === 'select') {
+      extra = ` => ${step.selectedText || step.selectedValue || ''}`;
+    }
+    li.textContent = `手順${index + 1} [${step.type}/${step.tabRole}] ${step.selector}${extra}`;
     pairList.appendChild(li);
   }
 }

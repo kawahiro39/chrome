@@ -23,11 +23,13 @@ function responseError(sendResponse, error) {
 function statusText() {
   switch (state.status) {
     case 'copy_waiting':
-      return 'コピー待ち（→キーでクリック手順を追加）';
+      return 'コピー待ち（→1回:クリック手順 / →2回:ドロップダウン選択手順）';
     case 'paste_waiting':
       return 'ペースト待ち';
     case 'click_waiting_dest':
-      return 'クリック待ち（ペースト先タブ）';
+      return 'クリック待ち（ペースト先タブ / →でもう一度でドロップダウン選択）';
+    case 'select_waiting_dest':
+      return 'ドロップダウン選択待ち（ペースト先タブ）';
     case 'stopped':
       return '停止中';
     default:
@@ -257,6 +259,7 @@ async function runProject(project, sourceTabId, destTabId) {
       if (step.type === 'click') {
         const [clickResult] = await chrome.scripting.executeScript({
           target: { tabId: targetTabId },
+          world: 'MAIN',
           args: [step.selector],
           func: (selector) => {
             const node = document.querySelector(selector);
@@ -285,6 +288,16 @@ async function runProject(project, sourceTabId, destTabId) {
               node.click();
             }
 
+            const href = typeof node.getAttribute === 'function' ? node.getAttribute('href') || '' : '';
+            if (/^javascript:/i.test(href)) {
+              const script = href.replace(/^javascript:/i, '');
+              try {
+                view.eval(script);
+              } catch (error) {
+                return { ok: false, error: `javascript href failed: ${error.message}` };
+              }
+            }
+
             return { ok: true };
           }
         });
@@ -294,6 +307,45 @@ async function runProject(project, sourceTabId, destTabId) {
         }
 
         logs.push(`✅ ${stepLabel}: クリック成功`);
+        continue;
+      }
+
+      if (step.type === 'select') {
+        const [selectResult] = await chrome.scripting.executeScript({
+          target: { tabId: targetTabId },
+          args: [step.selector, step.selectedValue, step.selectedText],
+          func: (selector, selectedValue, selectedText) => {
+            const node = document.querySelector(selector);
+            if (!node) {
+              return { ok: false, error: `select target not found: ${selector}` };
+            }
+            const tag = node.tagName.toLowerCase();
+            if (tag !== 'select') {
+              return { ok: false, error: `target is not select: ${selector}` };
+            }
+
+            const options = Array.from(node.options || []);
+            let matched = options.find((opt) => opt.value === selectedValue);
+            if (!matched && selectedText) {
+              matched = options.find((opt) => (opt.textContent || '').trim() === selectedText.trim());
+            }
+            if (!matched) {
+              return { ok: false, error: `option not found: ${selectedValue || selectedText || '(empty)'}` };
+            }
+
+            node.value = matched.value;
+            matched.selected = true;
+            node.dispatchEvent(new Event('input', { bubbles: true }));
+            node.dispatchEvent(new Event('change', { bubbles: true }));
+            return { ok: true, selectedValue: matched.value, selectedText: (matched.textContent || '').trim() };
+          }
+        });
+
+        if (!selectResult.result.ok) {
+          throw new Error(selectResult.result.error);
+        }
+
+        logs.push(`✅ ${stepLabel}: ドロップダウン選択成功 (${selectResult.result.selectedText || selectResult.result.selectedValue})`);
         continue;
       }
 
@@ -405,6 +457,19 @@ async function startClickStepFromSource(requestTabId) {
   await sendToTab(state.destTabId, { type: 'START_SELECTION', mode: 'click' });
   state.status = 'click_waiting_dest';
   await focusTab(state.destTabId);
+}
+
+async function startSelectStepFromDest(requestTabId) {
+  if (state.status !== 'click_waiting_dest') {
+    throw new Error('ドロップダウン手順追加はクリック待ち状態でのみ実行できます。');
+  }
+  if (requestTabId !== state.destTabId) {
+    throw new Error('ドロップダウン手順追加はペースト先タブで→キーを押してください。');
+  }
+
+  await ensureInjected(state.destTabId);
+  await sendToTab(state.destTabId, { type: 'START_SELECTION', mode: 'select' });
+  state.status = 'select_waiting_dest';
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -549,6 +614,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         responseOk(sendResponse, {});
         break;
       }
+      case 'SELECT_MODE_REQUESTED': {
+        if (!sender.tab?.id) {
+          throw new Error('tab情報が取得できません。');
+        }
+        await startSelectStepFromDest(sender.tab.id);
+        responseOk(sendResponse, {});
+        break;
+      }
       case 'ELEMENT_SELECTED': {
         if (!sender.tab?.id) {
           throw new Error('tab情報が取得できません。');
@@ -602,6 +675,27 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             tabRole: 'dest',
             selector: message.selector,
             label: `クリック${state.steps.filter((step) => step.type === 'click').length + 1}`
+          });
+          state.status = 'copy_waiting';
+          await sendToTab(state.destTabId, { type: 'STOP_SELECTION' });
+          await sendToTab(state.sourceTabId, { type: 'START_SELECTION', mode: 'copy' });
+          await focusTab(state.sourceTabId);
+          responseOk(sendResponse, {});
+          return;
+        }
+
+        if (state.status === 'select_waiting_dest' && tabId === state.destTabId) {
+          if (message.tagName !== 'select') {
+            throw new Error('ドロップダウン選択手順はselect要素で選択してください。');
+          }
+          state.steps.push({
+            stepId: crypto.randomUUID(),
+            type: 'select',
+            tabRole: 'dest',
+            selector: message.selector,
+            selectedValue: message.selectedValue,
+            selectedText: message.selectedText,
+            label: `選択${state.steps.filter((step) => step.type === 'select').length + 1}`
           });
           state.status = 'copy_waiting';
           await sendToTab(state.destTabId, { type: 'STOP_SELECTION' });

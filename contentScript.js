@@ -90,13 +90,16 @@
 
   function modeHint(mode) {
     if (mode === 'copy') {
-      return 'Copy要素をクリック（→でクリック手順追加 / Escで停止）';
+      return 'Copy要素をクリック（→1回:クリック手順 / →2回:ドロップダウン手順）';
     }
     if (mode === 'paste') {
       return 'Paste inputをクリック（Escで停止）';
     }
     if (mode === 'click') {
-      return 'クリック手順の対象をクリック（実際にはクリックしません）';
+      return 'クリック手順の対象をクリック（実際にはクリックしません。→でドロップダウン手順へ）';
+    }
+    if (mode === 'select') {
+      return 'ドロップダウンの値を実際に選択してください（changeで手順化）';
     }
     return '選択中';
   }
@@ -121,11 +124,18 @@
     if (state.mode === 'paste') {
       return target.closest('input, textarea');
     }
+    if (state.mode === 'select') {
+      return target.closest('select, option');
+    }
     return target;
   }
 
+  function shouldBlockInteraction() {
+    return state.active && state.mode !== 'select';
+  }
+
   function blockInteraction(event) {
-    if (!state.active) return;
+    if (!shouldBlockInteraction()) return;
     event.preventDefault();
     event.stopPropagation();
     event.stopImmediatePropagation();
@@ -156,6 +166,10 @@
     'click',
     (event) => {
       if (!state.active) return;
+      if (state.mode === 'select') {
+        return;
+      }
+
       event.preventDefault();
       event.stopPropagation();
       event.stopImmediatePropagation();
@@ -186,6 +200,35 @@
   );
 
   document.addEventListener(
+    'change',
+    (event) => {
+      if (!state.active || state.mode !== 'select') return;
+      const target = event.target;
+      const selectEl = target instanceof Element ? target.closest('select') : null;
+      if (!selectEl) return;
+
+      const selectedOption = selectEl.options[selectEl.selectedIndex] || null;
+      sendMessage(
+        'ELEMENT_SELECTED',
+        {
+          selector: getSelector(selectEl),
+          tagName: 'select',
+          selectedValue: selectEl.value,
+          selectedText: selectedOption ? (selectedOption.textContent || '').trim() : ''
+        },
+        (response) => {
+          if (!response.ok) {
+            setBadge(`エラー: ${response.error}`);
+            return;
+          }
+          stopSelection();
+        }
+      );
+    },
+    true
+  );
+
+  document.addEventListener(
     'keydown',
     (event) => {
       if (!state.active) return;
@@ -202,6 +245,19 @@
         event.preventDefault();
         event.stopPropagation();
         sendMessage('CLICK_MODE_REQUESTED', {}, (response) => {
+          if (!response.ok) {
+            setBadge(`エラー: ${response.error}`);
+            return;
+          }
+          stopSelection();
+        });
+        return;
+      }
+
+      if (event.key === 'ArrowRight' && state.mode === 'click') {
+        event.preventDefault();
+        event.stopPropagation();
+        sendMessage('SELECT_MODE_REQUESTED', {}, (response) => {
           if (!response.ok) {
             setBadge(`エラー: ${response.error}`);
             return;
