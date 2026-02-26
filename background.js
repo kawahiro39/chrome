@@ -499,6 +499,12 @@ async function stopPairing(focusUi = false) {
 
 
 function stepColor(step, activeStepId) {
+  if (step.stepId === activeStepId && (step.type === 'copy' || step.type === 'paste')) {
+    return '#16a34a';
+  }
+  if (step.type === 'copy' || step.type === 'paste') {
+    return '#16a34a';
+  }
   if (step.stepId === activeStepId) {
     return '#ef4444';
   }
