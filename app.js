@@ -6,6 +6,7 @@ const pairCount = document.getElementById('pair-count');
 const pairList = document.getElementById('pair-list');
 const runLog = document.getElementById('run-log');
 const diagnosticOutput = document.getElementById('diagnostic-output');
+const toast = document.getElementById('toast');
 
 const refreshTabsBtn = document.getElementById('refresh-tabs');
 const startPairingBtn = document.getElementById('start-pairing');
@@ -17,6 +18,15 @@ const diagnoseBtn = document.getElementById('diagnose');
 const projectNameInput = document.getElementById('project-name');
 
 let pollTimer;
+let toastTimer;
+
+function showToast(message) {
+  if (!toast) return;
+  toast.textContent = message;
+  toast.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toast.classList.remove('show'), 2200);
+}
 
 function sendMessage(type, payload = {}) {
   return new Promise((resolve, reject) => {
@@ -72,7 +82,7 @@ function renderSession(session) {
     : steps.filter((step) => step.type === 'paste').length;
 
   stateLine.textContent = `状態: ${session.statusText}`;
-  pairCount.textContent = `現在の手順数: ${steps.length}（ペア数: ${pairTotal}）`;
+  pairCount.textContent = `手順: ${steps.length} / ペア: ${pairTotal}`;
   pairList.innerHTML = '';
 
   for (const [index, step] of steps.entries()) {
@@ -129,6 +139,15 @@ async function refreshSession() {
   renderSession(sessionResponse.session);
 }
 
+async function safeAction(action, successMessage) {
+  try {
+    await action();
+    if (successMessage) showToast(successMessage);
+  } catch (error) {
+    showToast(`エラー: ${error.message}`);
+  }
+}
+
 async function initialize() {
   const currentTab = await chrome.tabs.getCurrent();
   await sendMessage('APP_INIT', { uiTabId: currentTab.id });
@@ -146,53 +165,53 @@ async function initialize() {
   }, 1000);
 }
 
-refreshTabsBtn.addEventListener('click', async () => {
+refreshTabsBtn.addEventListener('click', () => safeAction(async () => {
   await refreshTabs();
-});
+}, 'タブ一覧を更新しました'));
 
-startPairingBtn.addEventListener('click', async () => {
+startPairingBtn.addEventListener('click', () => safeAction(async () => {
   await sendMessage('START_PAIRING', {
     sourceTabId: Number(sourceSelect.value),
     destTabId: Number(destSelect.value)
   });
   await refreshSession();
-});
+}, '選択モードを開始しました'));
 
-resumePairingBtn.addEventListener('click', async () => {
+resumePairingBtn.addEventListener('click', () => safeAction(async () => {
   await sendMessage('RESUME_PAIRING');
   await refreshSession();
-});
+}, '再開しました'));
 
-stopPairingBtn.addEventListener('click', async () => {
+stopPairingBtn.addEventListener('click', () => safeAction(async () => {
   await sendMessage('STOP_PAIRING');
   await refreshSession();
-});
+}, '停止しました'));
 
-saveProjectBtn.addEventListener('click', async () => {
+saveProjectBtn.addEventListener('click', () => safeAction(async () => {
   await sendMessage('SAVE_PROJECT', {
     projectName: projectNameInput.value.trim()
   });
   projectNameInput.value = '';
   await refreshProjects();
   await refreshSession();
-});
+}, 'プロジェクトを保存しました'));
 
-runProjectBtn.addEventListener('click', async () => {
+runProjectBtn.addEventListener('click', () => safeAction(async () => {
   const result = await sendMessage('RUN_PROJECT', {
     projectId: projectSelect.value,
     sourceTabId: Number(sourceSelect.value),
     destTabId: Number(destSelect.value)
   });
   renderRunLog(result.logs);
-});
+}, '実行が完了しました'));
 
-diagnoseBtn.addEventListener('click', async () => {
+diagnoseBtn.addEventListener('click', () => safeAction(async () => {
   const result = await sendMessage('RUN_DIAGNOSTIC', {
     sourceTabId: Number(sourceSelect.value),
     destTabId: Number(destSelect.value)
   });
   diagnosticOutput.textContent = JSON.stringify(result.diagnostic, null, 2);
-});
+}, '診断結果を更新しました'));
 
 chrome.runtime.onMessage.addListener((message) => {
   if (message?.type === 'RUN_LOG_UPDATE') {
