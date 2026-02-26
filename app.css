@@ -1,0 +1,118 @@
+:root {
+  --bg: #f4f6fb;
+  --card: #fff;
+  --line: #dbe3f1;
+  --text: #10233b;
+  --muted: #5f718b;
+  --primary: #4f46e5;
+  --danger: #b4233d;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: Inter, Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.top {
+  background: #fff;
+  border-bottom: 1px solid var(--line);
+  padding: 18px 24px;
+}
+.top h1 { margin: 0; font-size: 28px; }
+.top p { margin: 6px 0 0; color: var(--muted); font-size: 14px; }
+
+.container {
+  max-width: 1100px;
+  margin: 18px auto 30px;
+  padding: 0 16px;
+  display: grid;
+  gap: 14px;
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 14px;
+}
+
+h2 { margin: 0 0 12px; font-size: 18px; }
+
+.grid2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+label {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  color: #334155;
+}
+
+select, input, button {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 14px;
+  background: #fff;
+}
+
+button { cursor: pointer; }
+button.primary { background: var(--primary); color: #fff; border-color: var(--primary); }
+button.danger { background: #fff1f2; color: var(--danger); border-color: #fecdd3; }
+button.block { width: 100%; margin-top: 8px; }
+
+.actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.help { margin: 8px 0 0; color: var(--muted); font-size: 13px; }
+.status-line { margin: 6px 0; font-size: 14px; }
+
+.list {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.5;
+  max-height: 210px;
+  overflow: auto;
+}
+
+#diagnostic-output {
+  margin-top: 10px;
+  min-height: 100px;
+  white-space: pre-wrap;
+  font-size: 12px;
+  background: #f8fafc;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px;
+}
+
+#toast {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  background: #111827;
+  color: #fff;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 12px;
+  opacity: 0;
+  transform: translateY(8px);
+  transition: .2s;
+  pointer-events: none;
+}
+#toast.show { opacity: 1; transform: translateY(0); }
+
+@media (max-width: 860px) {
+  .grid2 { grid-template-columns: 1fr; }
+}

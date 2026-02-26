@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CP Mapper</title>
+    <link rel="stylesheet" href="app.css" />
+  </head>
+  <body>
+    <header class="top">
+      <h1>Copy & Paste Mapper</h1>
+      <p>迷わない操作順: ①タブ選択 → ②開始 → ③保存/実行</p>
+    </header>
+
+    <main class="container">
+      <section class="card">
+        <h2>1) 対象タブを選択</h2>
+        <div class="grid2">
+          <label>コピー元タブ
+            <select id="source-tab"></select>
+          </label>
+          <label>ペースト先タブ
+            <select id="dest-tab"></select>
+          </label>
+        </div>
+        <p class="help">ショートカット: コピー元で → 1回=クリック手順 / → 2回=ドロップダウン手順。</p>
+      </section>
+
+      <section class="card">
+        <h2>2) 手順作成</h2>
+        <div class="actions">
+          <button id="refresh-tabs">タブ更新</button>
+          <button id="start-pairing" class="primary">開始</button>
+          <button id="resume-pairing">再開</button>
+          <button id="stop-pairing" class="danger">停止</button>
+        </div>
+        <div id="state-line" class="status-line"></div>
+        <div id="pair-count" class="status-line"></div>
+        <ul id="pair-list" class="list"></ul>
+      </section>
+
+      <section class="card">
+        <h2>3) 保存 / 実行</h2>
+        <div class="grid2">
+          <div>
+            <label>プロジェクト名
+              <input id="project-name" placeholder="例: 申請フォーム転記" />
+            </label>
+            <button id="save-project" class="primary block">終了して保存</button>
+          </div>
+          <div>
+            <label>保存済みプロジェクト
+              <select id="project-select"></select>
+            </label>
+            <button id="run-project" class="block">現在タブで実行</button>
+          </div>
+        </div>
+        <ul id="run-log" class="list"></ul>
+      </section>
+
+      <section class="card">
+        <h2>診断</h2>
+        <button id="diagnose">診断実行</button>
+        <pre id="diagnostic-output"></pre>
+      </section>
+    </main>
+
+    <div id="toast" aria-live="polite"></div>
+
+    <script src="app.js"></script>
+  </body>
+</html>
