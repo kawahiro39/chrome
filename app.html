@@ -3,68 +3,64 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>CP Mapper</title>
+    <title>コピペ・マッパー</title>
     <link rel="stylesheet" href="app.css" />
   </head>
   <body>
-    <header class="top">
-      <h1>Copy & Paste Mapper</h1>
-      <p>迷わない操作順: ①タブ選択 → ②開始 → ③保存/実行</p>
+    <header class="topbar">
+      <h1>コピペ・マッパー</h1>
+      <div class="avatar">◉</div>
     </header>
 
-    <main class="container">
-      <section class="card">
-        <h2>1) 対象タブを選択</h2>
-        <div class="grid2">
-          <label>コピー元タブ
-            <select id="source-tab"></select>
-          </label>
-          <label>ペースト先タブ
-            <select id="dest-tab"></select>
-          </label>
+    <main class="canvas">
+      <section class="main-card">
+        <div class="selector-col">
+          <label>コピー元タブ</label>
+          <select id="source-tab"></select>
         </div>
-        <p class="help">ショートカット: コピー元で → 1回=クリック手順 / → 2回=ドロップダウン手順。</p>
-      </section>
 
-      <section class="card">
-        <h2>2) 手順作成</h2>
-        <div class="actions">
-          <button id="refresh-tabs">タブ更新</button>
-          <button id="start-pairing" class="primary">開始</button>
-          <button id="resume-pairing">再開</button>
-          <button id="stop-pairing" class="danger">停止</button>
-        </div>
-        <div id="state-line" class="status-line"></div>
-        <div id="pair-count" class="status-line"></div>
-        <ul id="pair-list" class="list"></ul>
-      </section>
-
-      <section class="card">
-        <h2>3) 保存 / 実行</h2>
-        <div class="grid2">
-          <div>
-            <label>プロジェクト名
-              <input id="project-name" placeholder="例: 申請フォーム転記" />
-            </label>
-            <button id="save-project" class="primary block">終了して保存</button>
-          </div>
-          <div>
-            <label>保存済みプロジェクト
-              <select id="project-select"></select>
-            </label>
-            <button id="run-project" class="block">現在タブで実行</button>
+        <div class="center-col">
+          <div id="state-line">● 待機中</div>
+          <button id="start-pairing" class="play" aria-label="開始">▶</button>
+          <div class="mini-actions">
+            <button id="refresh-tabs">一覧更新</button>
+            <button id="resume-pairing">再開</button>
+            <button id="stop-pairing">停止</button>
           </div>
         </div>
-        <ul id="run-log" class="list"></ul>
+
+        <div class="selector-col">
+          <label>貼り付け先タブ</label>
+          <select id="dest-tab"></select>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="save-row">
+          <input id="project-name" placeholder="プロジェクト名を入力" />
+          <button id="save-project">保存</button>
+        </div>
       </section>
 
-      <section class="card">
-        <h2>診断</h2>
+      <section class="sub-card">
+        <div class="sub-head">
+          <h2>保存済みプロジェクト</h2>
+          <button id="run-project">現在タブで実行</button>
+        </div>
+        <select id="project-select"></select>
+        <div id="pair-count"></div>
+        <ul id="pair-list"></ul>
+        <ul id="run-log"></ul>
+      </section>
+
+      <details class="sub-card diagnostic-wrap">
+        <summary>診断</summary>
         <button id="diagnose">診断実行</button>
         <pre id="diagnostic-output"></pre>
-      </section>
+      </details>
     </main>
 
+    <footer class="foot">ULTRA-MINIMALIST INTERFACE V1.0 / JAPANESE EDITION</footer>
     <div id="toast" aria-live="polite"></div>
 
     <script src="app.js"></script>
