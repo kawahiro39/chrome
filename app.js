@@ -84,7 +84,8 @@ function selectedProject() {
 
 function stepLabel(step) {
   if (step.type === 'copy') {
-    return 'コピー（値を取得）';
+    const sample = (step.sampleText || '').trim();
+    return sample ? `コピー（値を取得） サンプル: ${sample}` : 'コピー（値を取得） サンプル: (未取得)';
   }
   if (step.type === 'paste') {
     return 'ペースト（入力欄へ反映）';

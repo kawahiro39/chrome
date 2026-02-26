@@ -793,7 +793,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
         if (state.status === 'copy_waiting' && tabId === state.sourceTabId) {
           state.pendingCopy = {
-            sourceSelector: message.selector
+            sourceSelector: message.selector,
+            sourceSample: message.textSample || ''
           };
           state.status = 'paste_waiting';
           await sendToTab(state.sourceTabId, { type: 'STOP_SELECTION' });
@@ -813,7 +814,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             type: 'copy',
             tabRole: 'source',
             selector: state.pendingCopy.sourceSelector,
-            label: `項目${pairIndex}-copy`
+            label: `項目${pairIndex}-copy`,
+            sampleText: state.pendingCopy.sourceSample || ''
           });
           state.steps.push({
             stepId: crypto.randomUUID(),

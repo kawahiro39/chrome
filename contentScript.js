@@ -224,11 +224,13 @@
         return;
       }
 
+      const textSample = 'value' in target ? String(target.value || '') : String(target.textContent || '').trim();
       sendMessage(
         'ELEMENT_SELECTED',
         {
           selector: getSelector(target),
-          tagName: target.tagName.toLowerCase()
+          tagName: target.tagName.toLowerCase(),
+          textSample: textSample.slice(0, 120)
         },
         (response) => {
           if (!response.ok) {
