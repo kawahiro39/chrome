@@ -168,13 +168,25 @@ function pairCountFromSteps(steps = []) {
   return steps.filter((step) => step.type === 'paste').length;
 }
 
+function normalizeExecution(execution) {
+  const mode = execution?.mode === 'parallel' ? 'parallel' : 'sequential';
+  const rawMs = Number(execution?.stepDelayMs);
+  const stepDelayMs = Number.isFinite(rawMs) ? Math.min(5000, Math.max(100, Math.round(rawMs))) : 300;
+  return { mode, stepDelayMs };
+}
+
+function waitMs(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 
 function normalizeProject(project) {
   const steps = projectSteps(project);
   return {
     ...project,
     steps,
-    mappings: project.mappings || buildMappingsFromSteps(steps)
+    mappings: project.mappings || buildMappingsFromSteps(steps),
+    execution: normalizeExecution(project.execution)
   };
 }
 
@@ -210,7 +222,7 @@ async function waitTabComplete(tabId, timeoutMs = 20000) {
   });
 }
 
-async function runProject(project, sourceTabId, destTabId) {
+async function runProject(project, sourceTabId, destTabId, executionOverride) {
   if (!sourceTabId || !destTabId) {
     throw new Error('実行先のコピー元/ペースト先タブを選択してください。');
   }
@@ -236,6 +248,7 @@ async function runProject(project, sourceTabId, destTabId) {
     `ℹ️ 実行対象(コピー元): ${sourceTab.title || ''} [${sourceTab.url || ''}]`,
     `ℹ️ 実行対象(ペースト先): ${destTab.title || ''} [${destTab.url || ''}]`
   ];
+  const execution = normalizeExecution(executionOverride || project.execution);
 
   if (project.sourceUrl && sourceTab.url && project.sourceUrl !== sourceTab.url) {
     logs.push('⚠️ 保存時のコピー元URLと現在タブURLが異なります。現在タブで実行を継続します。');
@@ -247,8 +260,7 @@ async function runProject(project, sourceTabId, destTabId) {
   let lastValue = '';
   let hasValue = false;
 
-  for (let index = 0; index < steps.length; index += 1) {
-    const step = steps[index];
+  const runStep = async (step, index) => {
     const stepLabel = step.label || `手順${index + 1}`;
     const targetTabId = step.tabRole === 'source' ? sourceTab.id : destTab.id;
 
@@ -274,7 +286,7 @@ async function runProject(project, sourceTabId, destTabId) {
         lastValue = copyResult.result.value;
         hasValue = true;
         logs.push(`✅ ${stepLabel}: コピー成功`);
-        continue;
+        return;
       }
 
       if (step.type === 'click') {
@@ -355,7 +367,7 @@ async function runProject(project, sourceTabId, destTabId) {
         }
 
         logs.push(`✅ ${stepLabel}: クリック成功`);
-        continue;
+        return;
       }
 
       if (step.type === 'select') {
@@ -394,7 +406,7 @@ async function runProject(project, sourceTabId, destTabId) {
         }
 
         logs.push(`✅ ${stepLabel}: ドロップダウン選択成功 (${selectResult.result.selectedText || selectResult.result.selectedValue})`);
-        continue;
+        return;
       }
 
       if (step.type === 'paste') {
@@ -426,12 +438,25 @@ async function runProject(project, sourceTabId, destTabId) {
         }
 
         logs.push(`✅ ${stepLabel}: ペースト成功`);
-        continue;
+        return;
       }
 
       logs.push(`⚠️ ${stepLabel}: 未対応手順 type=${step.type}`);
     } catch (error) {
       logs.push(`❌ ${stepLabel}: ${error.message}`);
+    }
+  };
+
+  if (execution.mode === 'parallel') {
+    logs.push('ℹ️ 実行モード: 同時実行');
+    await Promise.all(steps.map((step, index) => runStep(step, index)));
+  } else {
+    logs.push(`ℹ️ 実行モード: 順次実行（手順間 ${Number((execution.stepDelayMs / 1000).toFixed(1))}秒）`);
+    for (let index = 0; index < steps.length; index += 1) {
+      await runStep(steps[index], index);
+      if (index < steps.length - 1) {
+        await waitMs(execution.stepDelayMs);
+      }
     }
   }
 
@@ -729,7 +754,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           sourceUrl: state.sourceUrl,
           destUrl: state.destUrl,
           steps: state.steps,
-          mappings: buildMappingsFromSteps(state.steps)
+          mappings: buildMappingsFromSteps(state.steps),
+          execution: normalizeExecution(null)
         });
         await saveProjects(projects);
         await stopPairing(false);
@@ -761,6 +787,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             throw new Error('プロジェクト名を空にできません。');
           }
           project.projectName = name;
+        }
+        if (patch.execution && typeof patch.execution === 'object') {
+          project.execution = normalizeExecution(patch.execution);
         }
         projects[index] = project;
         await saveProjects(projects);
@@ -895,7 +924,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         if (!project) {
           throw new Error('プロジェクトが見つかりません。');
         }
-        const logs = await runProject(project, message.sourceTabId, message.destTabId);
+        const logs = await runProject(project, message.sourceTabId, message.destTabId, message.execution);
         state.runLogs = logs;
         responseOk(sendResponse, { logs });
         break;

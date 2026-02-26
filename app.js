@@ -18,6 +18,9 @@ const runProjectBtn = document.getElementById('run-project');
 const diagnoseBtn = document.getElementById('diagnose');
 const renameProjectBtn = document.getElementById('rename-project');
 const projectNameInput = document.getElementById('project-name');
+const executionModeSelect = document.getElementById('execution-mode');
+const stepDelayInput = document.getElementById('step-delay');
+const saveExecutionSettingsBtn = document.getElementById('save-execution-settings');
 
 let pollTimer;
 let toastTimer;
@@ -188,6 +191,29 @@ function renderSession(session) {
   }
 }
 
+
+function normalizeExecutionSettings(execution) {
+  const mode = execution?.mode === 'parallel' ? 'parallel' : 'sequential';
+  const delaySec = Number(execution?.stepDelayMs) / 1000;
+  const clampedSec = Number.isFinite(delaySec) ? Math.min(5, Math.max(0.1, delaySec)) : 0.3;
+  return { mode, stepDelaySec: Number(clampedSec.toFixed(1)) };
+}
+
+function currentExecutionSettings() {
+  const mode = executionModeSelect.value === 'parallel' ? 'parallel' : 'sequential';
+  const raw = Number(stepDelayInput.value);
+  const clamped = Number.isFinite(raw) ? Math.min(5, Math.max(0.1, raw)) : 0.3;
+  stepDelayInput.value = clamped.toFixed(1);
+  return { mode, stepDelayMs: Math.round(clamped * 1000) };
+}
+
+function renderExecutionSettings(project) {
+  const normalized = normalizeExecutionSettings(project?.execution);
+  executionModeSelect.value = normalized.mode;
+  stepDelayInput.value = normalized.stepDelaySec.toFixed(1);
+  stepDelayInput.disabled = normalized.mode === 'parallel';
+}
+
 function renderProjects(projects) {
   const current = projectSelect.value;
   projectsCache = projects;
@@ -199,6 +225,7 @@ function renderProjects(projects) {
     opt.textContent = '保存済みプロジェクトなし';
     projectSelect.appendChild(opt);
     renderStepEditor(null);
+    renderExecutionSettings(null);
     return;
   }
 
@@ -214,7 +241,9 @@ function renderProjects(projects) {
     projectSelect.value = current;
   }
 
-  renderStepEditor(selectedProject());
+  const project = selectedProject();
+  renderStepEditor(project);
+  renderExecutionSettings(project);
 }
 
 function renderRunLog(entries) {
@@ -303,7 +332,8 @@ runProjectBtn.addEventListener('click', () => safeAction(async () => {
   const result = await sendMessage('RUN_PROJECT', {
     projectId: projectSelect.value,
     sourceTabId: Number(sourceSelect.value),
-    destTabId: Number(destSelect.value)
+    destTabId: Number(destSelect.value),
+    execution: currentExecutionSettings()
   });
   renderRunLog(result.logs);
 }, '実行が完了しました'));
@@ -315,6 +345,23 @@ diagnoseBtn.addEventListener('click', () => safeAction(async () => {
   });
   diagnosticOutput.textContent = JSON.stringify(result.diagnostic, null, 2);
 }, '診断結果を更新しました'));
+
+
+saveExecutionSettingsBtn.addEventListener('click', () => safeAction(async () => {
+  const project = selectedProject();
+  if (!project) {
+    throw new Error('プロジェクトを選択してください。');
+  }
+  await sendMessage('UPDATE_PROJECT', {
+    projectId: project.projectId,
+    patch: { execution: currentExecutionSettings() }
+  });
+  await refreshProjects();
+}, '実行設定を保存しました'));
+
+executionModeSelect.addEventListener('change', () => {
+  stepDelayInput.disabled = executionModeSelect.value === 'parallel';
+});
 
 renameProjectBtn.addEventListener('click', () => safeAction(async () => {
   const project = selectedProject();
@@ -384,7 +431,9 @@ projectStepList.addEventListener('click', (event) => {
 });
 
 projectSelect.addEventListener('change', () => {
-  renderStepEditor(selectedProject());
+  const project = selectedProject();
+  renderStepEditor(project);
+  renderExecutionSettings(project);
 });
 
 chrome.runtime.onMessage.addListener((message) => {

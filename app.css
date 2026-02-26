@@ -309,3 +309,31 @@ button {
   padding: 5px 8px;
   border-radius: 8px;
 }
+
+
+.exec-settings {
+  display: grid;
+  grid-template-columns: auto minmax(120px, 220px) auto minmax(100px, 140px) auto;
+  gap: 8px;
+  align-items: center;
+  margin-top: 10px;
+}
+.exec-settings label {
+  font-size: clamp(12px, 1.1vw, 14px);
+  color: var(--muted);
+}
+.exec-settings input,
+.exec-settings select {
+  width: 100%;
+  font-size: clamp(12px, 1.1vw, 14px);
+  padding: 8px 10px;
+}
+.exec-settings button {
+  font-size: clamp(12px, 1.1vw, 14px);
+  padding: 8px 12px;
+}
+@media (max-width: 900px) {
+  .exec-settings {
+    grid-template-columns: 1fr;
+  }
+}
