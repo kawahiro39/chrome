@@ -4,6 +4,7 @@ const projectSelect = document.getElementById('project-select');
 const stateLine = document.getElementById('state-line');
 const pairCount = document.getElementById('pair-count');
 const pairList = document.getElementById('pair-list');
+const projectStepList = document.getElementById('project-step-list');
 const runLog = document.getElementById('run-log');
 const diagnosticOutput = document.getElementById('diagnostic-output');
 const toast = document.getElementById('toast');
@@ -15,10 +16,12 @@ const stopPairingBtn = document.getElementById('stop-pairing');
 const saveProjectBtn = document.getElementById('save-project');
 const runProjectBtn = document.getElementById('run-project');
 const diagnoseBtn = document.getElementById('diagnose');
+const renameProjectBtn = document.getElementById('rename-project');
 const projectNameInput = document.getElementById('project-name');
 
 let pollTimer;
 let toastTimer;
+let projectsCache = [];
 
 function showToast(message) {
   if (!toast) return;
@@ -75,6 +78,58 @@ function projectStats(project) {
   return { stepsTotal: steps.length, pairTotal };
 }
 
+function selectedProject() {
+  return projectsCache.find((project) => project.projectId === projectSelect.value) || null;
+}
+
+function stepSummary(step) {
+  if (step.type === 'select') {
+    return `${step.type}/${step.tabRole} ${step.selector} => ${step.selectedText || step.selectedValue || ''}`;
+  }
+  return `${step.type}/${step.tabRole} ${step.selector}`;
+}
+
+function renderStepEditor(project) {
+  projectStepList.innerHTML = '';
+  if (!project) {
+    const li = document.createElement('li');
+    li.textContent = '編集するプロジェクトを選択してください。';
+    projectStepList.appendChild(li);
+    return;
+  }
+
+  const steps = project.steps || [];
+  if (!steps.length) {
+    const li = document.createElement('li');
+    li.textContent = '手順がありません。';
+    projectStepList.appendChild(li);
+    return;
+  }
+
+  for (const [index, step] of steps.entries()) {
+    const li = document.createElement('li');
+    li.dataset.stepId = step.stepId;
+
+    const text = document.createElement('span');
+    text.textContent = `手順${index + 1}: ${stepSummary(step)}`;
+    li.appendChild(text);
+
+    const editBtn = document.createElement('button');
+    editBtn.textContent = '修正';
+    editBtn.className = 'edit-btn';
+    editBtn.dataset.stepId = step.stepId;
+    li.appendChild(editBtn);
+
+    const deleteBtn = document.createElement('button');
+    deleteBtn.textContent = '削除';
+    deleteBtn.className = 'delete-btn';
+    deleteBtn.dataset.stepId = step.stepId;
+    li.appendChild(deleteBtn);
+
+    projectStepList.appendChild(li);
+  }
+}
+
 function renderSession(session) {
   const steps = session.steps || [];
   const pairTotal = typeof session.pairCount === 'number'
@@ -87,24 +142,25 @@ function renderSession(session) {
 
   for (const [index, step] of steps.entries()) {
     const li = document.createElement('li');
-    let extra = '';
-    if (step.type === 'select') {
-      extra = ` => ${step.selectedText || step.selectedValue || ''}`;
-    }
-    li.textContent = `手順${index + 1} [${step.type}/${step.tabRole}] ${step.selector}${extra}`;
+    li.textContent = `手順${index + 1} [${step.type}/${step.tabRole}] ${step.selector}`;
     pairList.appendChild(li);
   }
 }
 
 function renderProjects(projects) {
+  const current = projectSelect.value;
+  projectsCache = projects;
   projectSelect.innerHTML = '';
+
   if (!projects.length) {
     const opt = document.createElement('option');
     opt.value = '';
     opt.textContent = '保存済みプロジェクトなし';
     projectSelect.appendChild(opt);
+    renderStepEditor(null);
     return;
   }
+
   for (const project of projects) {
     const { stepsTotal, pairTotal } = projectStats(project);
     const opt = document.createElement('option');
@@ -112,6 +168,12 @@ function renderProjects(projects) {
     opt.textContent = `${project.projectName} (手順${stepsTotal} / ペア${pairTotal})`;
     projectSelect.appendChild(opt);
   }
+
+  if (current && projects.some((project) => project.projectId === current)) {
+    projectSelect.value = current;
+  }
+
+  renderStepEditor(selectedProject());
 }
 
 function renderRunLog(entries) {
@@ -146,6 +208,27 @@ async function safeAction(action, successMessage) {
   } catch (error) {
     showToast(`エラー: ${error.message}`);
   }
+}
+
+function buildEditPayload(step) {
+  const selector = window.prompt('selectorを入力してください', step.selector || '');
+  if (selector === null) return null;
+
+  const payload = {
+    selector: selector.trim() || step.selector,
+    label: step.label || ''
+  };
+
+  if (step.type === 'select') {
+    const value = window.prompt('selectedValueを入力してください', step.selectedValue || '');
+    if (value === null) return null;
+    const text = window.prompt('selectedTextを入力してください', step.selectedText || '');
+    if (text === null) return null;
+    payload.selectedValue = value;
+    payload.selectedText = text;
+  }
+
+  return payload;
 }
 
 async function initialize() {
@@ -212,6 +295,69 @@ diagnoseBtn.addEventListener('click', () => safeAction(async () => {
   });
   diagnosticOutput.textContent = JSON.stringify(result.diagnostic, null, 2);
 }, '診断結果を更新しました'));
+
+renameProjectBtn.addEventListener('click', () => safeAction(async () => {
+  const project = selectedProject();
+  if (!project) {
+    throw new Error('プロジェクトを選択してください。');
+  }
+  const name = window.prompt('新しいプロジェクト名', project.projectName || '');
+  if (name === null) return;
+
+  await sendMessage('UPDATE_PROJECT', {
+    projectId: project.projectId,
+    patch: { projectName: name.trim() || project.projectName }
+  });
+  await refreshProjects();
+}, 'プロジェクト名を更新しました'));
+
+projectStepList.addEventListener('click', (event) => {
+  const button = event.target;
+  if (!(button instanceof HTMLButtonElement)) return;
+
+  const project = selectedProject();
+  if (!project) {
+    showToast('プロジェクトを選択してください。');
+    return;
+  }
+
+  const stepId = button.dataset.stepId;
+  if (!stepId) return;
+  const step = (project.steps || []).find((item) => item.stepId === stepId);
+  if (!step) {
+    showToast('対象手順が見つかりません。');
+    return;
+  }
+
+  if (button.classList.contains('delete-btn')) {
+    safeAction(async () => {
+      await sendMessage('DELETE_PROJECT_STEP', {
+        projectId: project.projectId,
+        stepId
+      });
+      await refreshProjects();
+    }, '手順を削除しました');
+    return;
+  }
+
+  if (button.classList.contains('edit-btn')) {
+    const patch = buildEditPayload(step);
+    if (!patch) return;
+
+    safeAction(async () => {
+      await sendMessage('UPDATE_PROJECT_STEP', {
+        projectId: project.projectId,
+        stepId,
+        patch
+      });
+      await refreshProjects();
+    }, '手順を更新しました');
+  }
+});
+
+projectSelect.addEventListener('change', () => {
+  renderStepEditor(selectedProject());
+});
 
 chrome.runtime.onMessage.addListener((message) => {
   if (message?.type === 'RUN_LOG_UPDATE') {

@@ -158,6 +158,17 @@ function pairCountFromSteps(steps = []) {
   return steps.filter((step) => step.type === 'paste').length;
 }
 
+
+function normalizeProject(project) {
+  const steps = projectSteps(project);
+  return {
+    ...project,
+    steps,
+    mappings: project.mappings || buildMappingsFromSteps(steps)
+  };
+}
+
+
 async function loadProjects() {
   const data = await chrome.storage.local.get(STORAGE_KEY);
   return data[STORAGE_KEY] || [];
@@ -575,15 +586,99 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       case 'LIST_PROJECTS': {
         const projects = await loadProjects();
         responseOk(sendResponse, {
-          projects: projects.map((project) => {
-            const steps = projectSteps(project);
-            return {
-              ...project,
-              steps,
-              mappings: project.mappings || buildMappingsFromSteps(steps)
-            };
-          })
+          projects: projects.map((project) => normalizeProject(project))
         });
+        break;
+      }
+      case 'UPDATE_PROJECT': {
+        if (!message.projectId) {
+          throw new Error('projectIdが必要です。');
+        }
+        const projects = await loadProjects();
+        const index = projects.findIndex((item) => item.projectId === message.projectId);
+        if (index < 0) {
+          throw new Error('プロジェクトが見つかりません。');
+        }
+        const project = normalizeProject(projects[index]);
+        const patch = message.patch || {};
+        if (typeof patch.projectName === 'string') {
+          const name = patch.projectName.trim();
+          if (!name) {
+            throw new Error('プロジェクト名を空にできません。');
+          }
+          project.projectName = name;
+        }
+        projects[index] = project;
+        await saveProjects(projects);
+        responseOk(sendResponse, { project });
+        break;
+      }
+      case 'UPDATE_PROJECT_STEP': {
+        const { projectId, stepId, patch = {} } = message;
+        if (!projectId || !stepId) {
+          throw new Error('projectIdとstepIdが必要です。');
+        }
+
+        const projects = await loadProjects();
+        const projectIndex = projects.findIndex((item) => item.projectId === projectId);
+        if (projectIndex < 0) {
+          throw new Error('プロジェクトが見つかりません。');
+        }
+
+        const project = normalizeProject(projects[projectIndex]);
+        const stepIndex = project.steps.findIndex((item) => item.stepId === stepId);
+        if (stepIndex < 0) {
+          throw new Error('手順が見つかりません。');
+        }
+
+        const step = { ...project.steps[stepIndex] };
+        if (typeof patch.selector === 'string' && patch.selector.trim()) {
+          step.selector = patch.selector.trim();
+        }
+        if (typeof patch.label === 'string') {
+          step.label = patch.label;
+        }
+        if (step.type === 'select') {
+          if (typeof patch.selectedValue === 'string') {
+            step.selectedValue = patch.selectedValue;
+          }
+          if (typeof patch.selectedText === 'string') {
+            step.selectedText = patch.selectedText;
+          }
+        }
+
+        project.steps[stepIndex] = step;
+        project.mappings = buildMappingsFromSteps(project.steps);
+        projects[projectIndex] = project;
+        await saveProjects(projects);
+
+        responseOk(sendResponse, { project });
+        break;
+      }
+      case 'DELETE_PROJECT_STEP': {
+        const { projectId, stepId } = message;
+        if (!projectId || !stepId) {
+          throw new Error('projectIdとstepIdが必要です。');
+        }
+
+        const projects = await loadProjects();
+        const projectIndex = projects.findIndex((item) => item.projectId === projectId);
+        if (projectIndex < 0) {
+          throw new Error('プロジェクトが見つかりません。');
+        }
+
+        const project = normalizeProject(projects[projectIndex]);
+        const nextSteps = project.steps.filter((step) => step.stepId !== stepId);
+        if (nextSteps.length === project.steps.length) {
+          throw new Error('手順が見つかりません。');
+        }
+
+        project.steps = nextSteps;
+        project.mappings = buildMappingsFromSteps(nextSteps);
+        projects[projectIndex] = project;
+        await saveProjects(projects);
+
+        responseOk(sendResponse, { project });
         break;
       }
       case 'RUN_PROJECT': {

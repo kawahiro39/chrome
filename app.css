@@ -233,3 +233,44 @@ button {
     align-items: flex-start;
   }
 }
+
+
+.step-editor-head {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+.step-editor-head button {
+  font-size: 12px;
+  padding: 6px 10px;
+}
+.editable-list {
+  list-style: decimal;
+  padding-left: 20px;
+  margin: 10px 0 0;
+  display: grid;
+  gap: 6px;
+}
+.editable-list li {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 6px;
+  align-items: center;
+  font-size: 12px;
+}
+.editable-list .edit-btn,
+.editable-list .delete-btn {
+  font-size: 11px;
+  padding: 5px 8px;
+  border-radius: 8px;
+}
+.editable-list .delete-btn {
+  background: #fff1f2;
+  border-color: #fecdd3;
+  color: #b4233d;
+}
