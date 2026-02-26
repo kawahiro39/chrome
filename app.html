@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CP Mapper</title>
+    <link rel="stylesheet" href="app.css" />
+  </head>
+  <body>
+    <div class="layout">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="logo">⧉</div>
+          <div>CP Mapper</div>
+        </div>
+        <nav>
+          <a class="active">Projects</a>
+          <a>Pairing</a>
+          <a>History</a>
+        </nav>
+        <div class="sidebar-footer">Settings</div>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <h1>Untitled Mapping</h1>
+          <div class="status">● Ready to Sync</div>
+        </header>
+
+        <section class="pair-panels">
+          <article class="card">
+            <div class="chip chip-source">SOURCE</div>
+            <label>コピー元タブ
+              <select id="source-tab"></select>
+            </label>
+            <small>Data will be captured from this context</small>
+          </article>
+
+          <div class="swap">⇄</div>
+
+          <article class="card">
+            <div class="chip chip-dest">DESTINATION</div>
+            <label>ペースト先タブ
+              <select id="dest-tab"></select>
+            </label>
+            <small>Values will be mapped to active fields here</small>
+          </article>
+        </section>
+
+        <section class="panel-grid">
+          <article class="panel">
+            <h2>Session</h2>
+            <div id="state-line"></div>
+            <div class="hint">ヒント: コピー元で <strong>→</strong> 1回でクリック手順 / 2回目でドロップダウン手順モード。</div>
+            <div id="pair-count"></div>
+            <ul id="pair-list"></ul>
+          </article>
+
+          <article class="panel">
+            <h2>Projects</h2>
+            <select id="project-select"></select>
+            <div class="save-row">
+              <input id="project-name" placeholder="プロジェクト名" />
+              <button id="save-project" class="primary">終了して保存</button>
+            </div>
+            <ul id="run-log"></ul>
+          </article>
+
+          <article class="panel">
+            <h2>診断</h2>
+            <button id="diagnose">診断実行</button>
+            <pre id="diagnostic-output"></pre>
+          </article>
+        </section>
+      </main>
+    </div>
+
+    <div class="floating-actions">
+      <button id="refresh-tabs">Refresh</button>
+      <button id="start-pairing" class="primary">Start Pairing</button>
+      <button id="resume-pairing">Resume</button>
+      <button id="stop-pairing" class="danger">Stop</button>
+      <button id="run-project">現在タブで実行</button>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>
